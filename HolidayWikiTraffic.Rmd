@@ -1,0 +1,233 @@
+---
+title: "A Look at Wikipedia Traffic for Holiday Articles"
+author: "Emma Ideal"
+date: "9 Oct 2015"
+output: html_document
+---
+
+## Introduction
+
+It's October now, and the holiday season is almost upon us! Halloween, then Thanksgiving, and finally Christmas and New Years. I thought it would be interesting to have a look at Wikipedia traffic for articles written about U.S. holidays. I credit [this website](http://stats.grok.se/) for all of the data used here. We will look at Wikipedia traffic between the dates October 1, 2014 to September 30, 2015 for the following holidays:
+
+- Valentine's Day
+- Easter
+- Halloween
+- Thankgiving
+- Christmas
+
+## Data
+
+I will extract the data in JSON format from the website linked to above. Each JSON contains the number of Wikipedia hits for each day in a single month for a given holiday. As an example, here is a single JSON:
+
+```{r, message=FALSE}
+library(jsonlite)
+data <- fromJSON('http://stats.grok.se/json/en/201411/Thanksgiving')
+data.frame(data)
+```
+
+The data frame here is a single row of data, with columns titled e.g. "daily_views.2014.11.21" showing the number of hits on that given day. The final columns indicate the following:
+
+- project: en (English language Wikipedia)
+- month: in the format year + month
+- rank: Wikipedia rank indicating popularity of the article in that month (views are summed for the month)
+- title: Wikipedia article title
+
+I will row-bind the months' data to form a data frame for each holiday for the year beginning October 1, 2014 and ending September 30, 2015.
+
+## General Setup
+
+First we will load some necessary libraries:
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(scales)
+```
+The following function will be used to extract one month of Wikipedia hits for a given article title. We will use this to loop over the 12 months in our year beginning October 1, 2014 and ending September 30, 2015.
+
+```{r message=FALSE}
+monthData <- function(month, year, title){
+        df <- paste0('http://stats.grok.se/json/en/', year, month, '/', title) %>% fromJSON() %>% data.frame()
+        
+        # Remove the last 4 columns
+        df <- select(df, -(project:title))
+        
+        # Format the column names
+        names(df) <- gsub('daily_views.', '', names(df))
+        
+        # Stack the data frame's vectors, making the column names a column
+        df <- stack(df)
+        
+        # Convert column to Date type, for plotting
+        df$ind <- as.Date(df$ind, "%Y.%m.%d")
+        
+        # Rename columns
+        names(df) <- c('views', 'date')
+
+        # Filter out rows with date = NA (these are e.g. Nov 31, which is a date that doesn't exist)
+        filter(df, !is.na(df$date))
+}
+```
+
+Now let's make two vectors for the months and years we would like to loop over. The first element of both vectors will form October 2014, and the last elements of both vectors will form September 2015.
+
+```{r}
+years  <- c(rep('2014',3), rep('2015', 9))
+months <- c(as.character(10:12), paste0('0', as.character(1:9)))
+```
+
+The following function will do the looping for us. It binds all of the monthly data together for a given Wikipedia article topic.
+
+```{r}
+createDF <- function(title){
+all_df <- data.frame()
+for (i in (1:12)){
+     data <- monthData(months[i], years[i], title)
+     if (nrow(all_df) == 0){
+             all_df <- data
+     }
+     else{
+         all_df <- rbind(data, all_df)     
+        }
+}
+all_df
+}
+```
+
+Finally, let's write a function for plotting that we'll use to visualize the data for each of the holidays.
+
+```{r}
+datePlot <- function(df, color, article){
+        ggplot(df, aes(x=date, y=views)) + geom_bar(stat='identity', colour=color) + scale_x_date(labels=date_format("%Y-%m"), breaks='1 month') + theme(axis.text.x = element_text(angle=45, hjust = 1)) + labs(title=paste('Views for Wikipedia\'s', article, 'Article'))
+}
+```
+
+### Valentine's Day
+
+We will start with a rather unofficial U.S. holiday - Valentine's Day. Some people love it, some people hate it; either way, let's have a glance! We use **createDF()** to loop over the months:
+
+```{r, message=FALSE}
+all_df <- createDF('Valentine\'s%20Day')
+dim(all_df)
+head(all_df)
+```
+
+The data frame contains 365 rows (for the 365 days of the year) and two columns:
+
+- **views**: number of Wikipedia article views
+- **date**: day of the year
+
+We can now plot the data for Valentine's Day over this year:
+
+```{r}
+datePlot(all_df, 'red', 'Valentine\'s Day')
+```
+
+The spike in the plot corresponds to the hits on Valentine's Day:
+
+```{r}
+max(all_df$views)
+all_df$date[which.max(all_df$views)]
+```
+
+### Easter
+
+Let's do the same loop over months that we did for Valentine's Day but this time for the Wikipedia article "Easter":
+
+```{r, message=FALSE}
+all_df <- createDF('Easter')
+```
+
+Plotting the data:
+
+```{r}
+datePlot(all_df, 'darkmagenta', 'Easter')
+```
+
+Easter 2015 was on April 5, and we can see that this is the day with the maximum number of views. We also see another peak on April 11, which corresponds to Orthodox Holy Saturday, the day preceeding Orthodox Easter. This holiday could account for this second spike.
+
+```{r}
+max(all_df$views)
+all_df$date[which.max(all_df$views)]
+all_df$date[all_df$views>100000]
+```
+
+### Halloween
+
+Halloween is coming up, so let's take a look at its Wikipedia article popularity!
+
+```{r, message=FALSE}
+all_df <- createDF('Halloween')
+```
+
+Plotting the data:
+
+```{r}
+datePlot(all_df, 'darkorange', 'Halloween')
+```
+
+Again, nothing surprising. The spike seems to be on October 31, Halloween day:
+
+```{r}
+all_df$date[which.max(all_df$views)]
+```
+
+### Thanksgiving
+
+```{r, message=FALSE}
+all_df <- createDF('Thanksgiving')
+```
+
+Let's see what the data look like:
+
+```{r}
+datePlot(all_df, 'brown', 'Thanksgiving')
+```
+
+This is interesting! There is no distinct isolated peak in the number of views. As well, the day with the maximum number of views is not Thanksgiving Day. There is a local peak on November 27, 2014, Thanksgiving Day, with roughly 300,000 views, but the day with the largest number of hits is:
+
+```{r}
+all_df$date[which.max(all_df$views)]
+```
+
+Perhaps folks get excited about Thanksgiving as soon as November arrives? It is interesting that the peak in the beginning of November falls until 3-quarters of the way through the month, when views begin to increase again leading up to Thanksgiving Day. We can zoom in on October and November:
+
+```{r}
+df <- all_df[order(all_df$date),]
+ggplot(df[1:61,], aes(x=date, y=views)) + geom_bar(stat='identity', colour='brown') + scale_x_date(labels=date_format("%Y-%m"), breaks='1 month') + theme(axis.text.x = element_text(angle=45, hjust = 1))
+```
+
+Again, this data seems a bit odd to me.
+
+### Christmas
+
+```{r, message=FALSE}
+all_df <- createDF('Christmas')
+```
+
+Let's plot the data for Christmas:
+
+```{r}
+datePlot(all_df, 'darkgreen', 'Christmas')
+```
+
+Again, quite interesting. It will be easier to see the behavior if we zoom in a bit:
+
+```{r}
+df <- all_df[order(all_df$date),]
+ggplot(df[1:123,], aes(x=date, y=views)) + geom_bar(stat='identity', colour='darkgreen') + scale_x_date(labels=date_format("%Y-%m"), breaks='1 month') + theme(axis.text.x = element_text(angle=45, hjust = 1))
+```
+
+First of all, this plot deserves a bit of a laugh. If we plot a slice of this data in a different way, we'll see why.
+
+```{r}
+ggplot(df[46:92,], aes(x=date, y=views)) + geom_bar(stat='identity', colour='darkgreen') + scale_x_date(labels=date_format("%a"), breaks='2 days') + theme(axis.text.x = element_text(angle=45, hjust = 1))
+```
+
+The periodic behavior is explained by increased numbers of views on weekdays and lower views on weekends. One conjecture could be that office employees who spend a majority of their time working on computers take a few moments to browse the Internet while on the clock! On the weekends, perhaps folks spend less time online and more time smelling the roses.
+
+## Last Remarks
+
+This was a brief look into a year's worth of traffic on Wikipedia holiday articles, with most results unsurprising. If I were to spend a bit more time on this, I would have a look at views for the Thanksgiving article in years before 2014; the results here were quite unexpected. It was interesting to see the ramp-up in anticipation for Christmas, and we noticed in this case, the tendency of viewers to research Christmas on weekdays compared to weekends. It would also be interesting to sum up the views total for each article to see which receives the most overall traffic. 
+
+Happy holiday season!
